@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Group Availability Planner</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="app__header">
+        <h1>Group Availability Planner</h1>
+        <p class="app__tagline">
+          Collaboratively capture weekly availability and discover times that work for everyone.
+        </p>
+      </header>
+
+      <main class="app__body">
+        <section class="app__left">
+          <nav class="tabs" aria-label="Schedule views">
+            <button class="tabs__button tabs__button--active" data-tab-target="my-schedule" type="button">
+              My schedule
+            </button>
+            <button class="tabs__button" data-tab-target="common-times" type="button">
+              Common times
+            </button>
+          </nav>
+
+          <section
+            id="my-schedule"
+            class="tab-panel tab-panel--active"
+            aria-labelledby="my-schedule-tab"
+            data-tab-panel
+          >
+            <header class="panel__header">
+              <h2 class="panel__title">Weekly availability</h2>
+              <p class="panel__subtitle">
+                Click a time slot to toggle your availability. Admins can preview other participants.
+              </p>
+            </header>
+            <div class="grid" id="myScheduleGrid"></div>
+          </section>
+
+          <section id="common-times" class="tab-panel" aria-labelledby="common-times-tab" data-tab-panel>
+            <header class="panel__header">
+              <h2 class="panel__title">Common availability</h2>
+              <p class="panel__subtitle">
+                Green slots show times where everyone is available. Hover a slot to see who is free.
+              </p>
+            </header>
+            <div class="grid grid--common" id="commonAvailabilityGrid" aria-describedby="commonTimesHint">
+              <div id="commonTimesTooltip" class="tooltip" role="tooltip" aria-hidden="true"></div>
+            </div>
+            <p id="commonTimesHint" class="visually-hidden">
+              Hover a time slot to display the list of participants who are available at that time.
+            </p>
+          </section>
+        </section>
+
+        <aside class="app__sidebar" aria-label="Participants">
+          <header class="sidebar__header">
+            <h2>Participants</h2>
+            <p class="sidebar__description">
+              The event creator is automatically the admin and can review or delete schedules.
+            </p>
+          </header>
+          <ul class="participant-list" id="participantList"></ul>
+          <footer class="sidebar__footer">
+            <button class="sidebar__action" id="deleteScheduleButton" type="button">Delete schedule</button>
+          </footer>
+        </aside>
+      </main>
+    </div>
+
+    <template id="participantListItemTemplate">
+      <li class="participant-list__item">
+        <button class="participant-list__button" type="button"></button>
+        <span class="participant-list__badge" hidden>Admin</span>
+      </li>
+    </template>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
