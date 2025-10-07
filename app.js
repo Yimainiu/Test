@@ -10,20 +10,20 @@ const DAYS = [
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 
-const STORAGE_KEY = "group-availability-planner:schedules";
+const STORAGE_NAMESPACE = "group-availability-planner";
+const CURRENT_EVENT_KEY = `${STORAGE_NAMESPACE}:current-event-id`;
+const EVENT_KEY_PREFIX = `${STORAGE_NAMESPACE}:event:`;
+const USER_KEY_PREFIX = `${STORAGE_NAMESPACE}:user:`;
+const ADMIN_SESSION_PREFIX = `${STORAGE_NAMESPACE}:admin-session:`;
 
-const participants = [
-  { id: "alice", name: "Alice Johnson" },
-  { id: "bob", name: "Bob Smith" },
-  { id: "chloe", name: "Chloe Martin" },
-  { id: "dmitri", name: "Dmitri Lee" },
-];
-
-const ADMIN_ID = participants[0]?.id ?? "";
-const CURRENT_USER_ID = ADMIN_ID;
-let viewedParticipantId = CURRENT_USER_ID;
-
-const schedules = loadSchedules();
+let eventState = null;
+let schedules = new Map();
+let participants = [];
+let ADMIN_ID = "";
+let CURRENT_USER_ID = "";
+let viewedParticipantId = "";
+let adminSessionActive = false;
+let isAdmin = false;
 
 const myScheduleGrid = document.getElementById("myScheduleGrid");
 const commonAvailabilityGrid = document.getElementById("commonAvailabilityGrid");
@@ -33,89 +33,374 @@ const tabsContainer = document.querySelector(".tabs");
 const tabButtons = Array.from(document.querySelectorAll("[data-tab-target]"));
 const tabPanels = Array.from(document.querySelectorAll("[data-tab-panel]"));
 const tooltip = document.getElementById("commonTimesTooltip");
+const eventNameDisplay = document.getElementById("eventNameDisplay");
+const currentUserDisplay = document.getElementById("currentUserDisplay");
+const adminCodeNotice = document.getElementById("adminCodeNotice");
+const createEventButton = document.getElementById("createEventButton");
+const adminLoginForm = document.getElementById("adminLoginForm");
+const adminCodeInput = document.getElementById("adminCodeInput");
+const adminStatusText = document.getElementById("adminStatusText");
+const adminLoginError = document.getElementById("adminLoginError");
+const adminLogoutButton = document.getElementById("adminLogoutButton");
 if (tooltip) {
   tooltip.dataset.visible = "false";
   tooltip.setAttribute("aria-hidden", "true");
 }
 
-const isAdmin = CURRENT_USER_ID === ADMIN_ID;
+if (createEventButton) {
+  createEventButton.addEventListener("click", handleCreateEventClick);
+}
 
-function loadSchedules() {
-  const map = new Map();
+if (adminLoginForm) {
+  adminLoginForm.addEventListener("submit", handleAdminLoginSubmit);
+}
 
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      Object.entries(parsed).forEach(([id, slots]) => {
-        map.set(id, new Set(slots));
-      });
-    }
-  } catch (error) {
-    console.warn("Unable to restore schedules from storage", error);
+if (adminLogoutButton) {
+  adminLogoutButton.addEventListener("click", handleAdminLogout);
+}
+
+function eventStorageKey(eventId) {
+  return `${EVENT_KEY_PREFIX}${eventId}`;
+}
+
+function userStorageKey(eventId) {
+  return `${USER_KEY_PREFIX}${eventId}`;
+}
+
+function adminSessionKey(eventId) {
+  return `${ADMIN_SESSION_PREFIX}${eventId}`;
+}
+
+function persistEvent(event) {
+  window.localStorage.setItem(eventStorageKey(event.id), JSON.stringify(event));
+}
+
+function applyEventState(event) {
+  eventState = event;
+  if (!Array.isArray(eventState.participants)) {
+    eventState.participants = [];
   }
+  participants = eventState.participants;
 
-  if (map.size === 0) {
-    return createDefaultSchedules();
-  }
+  const scheduleSource = eventState.schedules ?? {};
+  schedules = new Map();
 
   participants.forEach((participant) => {
-    if (!map.has(participant.id)) {
-      map.set(participant.id, new Set());
+    const rawSlots = Array.isArray(scheduleSource[participant.id])
+      ? scheduleSource[participant.id]
+      : [];
+    schedules.set(participant.id, new Set(rawSlots));
+  });
+
+  Object.entries(scheduleSource).forEach(([participantId, rawSlots]) => {
+    if (!schedules.has(participantId)) {
+      schedules.set(
+        participantId,
+        new Set(Array.isArray(rawSlots) ? rawSlots : [])
+      );
     }
   });
 
-  return map;
+  ADMIN_ID = eventState.adminParticipantId ?? "";
 }
 
-function createDefaultSchedules() {
-  const seed = new Map();
+function saveEventState() {
+  if (!eventState) {
+    return;
+  }
 
-  const defaultEntries = {
-    alice: [
-      [0, [9, 10, 11, 14, 15]],
-      [1, [9, 10, 11, 15]],
-      [3, [13, 14, 15]],
-      [4, [9, 10, 11, 16, 17]],
-    ],
-    bob: [
-      [0, [9, 10, 11, 16]],
-      [1, [9, 10, 15, 16]],
-      [2, [10, 11, 12, 17]],
-      [4, [9, 10, 11, 15]],
-    ],
-    chloe: [
-      [0, [8, 9, 10, 11]],
-      [1, [9, 10, 11, 16]],
-      [2, [14, 15, 16]],
-      [4, [9, 10, 11, 15]],
-    ],
-    dmitri: [
-      [0, [9, 10, 11, 12]],
-      [1, [9, 10, 14, 15]],
-      [2, [9, 10, 11, 16]],
-      [4, [9, 10, 11, 15]],
-    ],
-  };
-
-  participants.forEach((participant) => {
-    const rows = defaultEntries[participant.id] ?? [];
-    const slotSet = new Set();
-    rows.forEach(([dayIndex, hours]) => {
-      hours.forEach((hour) => slotSet.add(slotKey(dayIndex, hour)));
-    });
-    seed.set(participant.id, slotSet);
-  });
-
-  return seed;
-}
-
-function saveSchedules() {
-  const serialised = {};
+  const serialisedSchedules = {};
   schedules.forEach((slots, participantId) => {
-    serialised[participantId] = Array.from(slots);
+    serialisedSchedules[participantId] = Array.from(slots).sort();
   });
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(serialised));
+
+  eventState.schedules = serialisedSchedules;
+  eventState.participants = participants;
+
+  persistEvent(eventState);
+}
+
+function loadExistingEvent() {
+  try {
+    const eventId = window.localStorage.getItem(CURRENT_EVENT_KEY);
+    if (!eventId) {
+      return null;
+    }
+
+    const raw = window.localStorage.getItem(eventStorageKey(eventId));
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+    parsed.id = eventId;
+    if (!Array.isArray(parsed.participants)) {
+      parsed.participants = [];
+    }
+    if (typeof parsed.schedules !== "object" || parsed.schedules === null) {
+      parsed.schedules = {};
+    }
+    return parsed;
+  } catch (error) {
+    console.warn("Unable to load event state", error);
+    return null;
+  }
+}
+
+function promptForValue(message, fallback) {
+  const value = window.prompt(message, fallback ?? "");
+  if (typeof value !== "string") {
+    return fallback ?? "";
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : fallback ?? "";
+}
+
+function normaliseName(name, fallback = "Guest") {
+  const trimmed = (name ?? "").trim();
+  if (!trimmed) {
+    return fallback;
+  }
+  return trimmed.replace(/\s+/g, " ");
+}
+
+function generateId(prefix) {
+  const randomPart = Math.random().toString(36).slice(2, 8);
+  const timePart = Date.now().toString(36).slice(-4);
+  return `${prefix}-${randomPart}${timePart}`;
+}
+
+function generateAdminCode() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function createParticipant(name) {
+  return {
+    id: generateId("participant"),
+    name: normaliseName(name, "Guest"),
+  };
+}
+
+function createEventData({ eventName, adminName }) {
+  const adminParticipant = createParticipant(adminName);
+  const eventId = generateId("event");
+  const adminCode = generateAdminCode();
+  return {
+    id: eventId,
+    name: normaliseName(eventName, "Untitled event"),
+    adminCode,
+    adminParticipantId: adminParticipant.id,
+    participants: [adminParticipant],
+    schedules: {
+      [adminParticipant.id]: [],
+    },
+  };
+}
+
+function clearEventSpecificState(eventId) {
+  if (!eventId) {
+    return;
+  }
+  window.localStorage.removeItem(userStorageKey(eventId));
+  window.localStorage.removeItem(adminSessionKey(eventId));
+}
+
+function promptCreateEvent() {
+  const eventName = promptForValue("Name your event:", "Team availability");
+  const adminName = promptForValue(
+    "Enter your name (you will be the admin):",
+    "Event host"
+  );
+
+  const event = createEventData({ eventName, adminName });
+  persistEvent(event);
+  window.localStorage.setItem(CURRENT_EVENT_KEY, event.id);
+  applyEventState(event);
+
+  CURRENT_USER_ID = event.adminParticipantId;
+  viewedParticipantId = CURRENT_USER_ID;
+  adminSessionActive = true;
+  refreshAdminState();
+
+  window.localStorage.setItem(userStorageKey(event.id), CURRENT_USER_ID);
+  window.localStorage.setItem(adminSessionKey(event.id), CURRENT_USER_ID);
+
+  if (typeof window.alert === "function") {
+    window.alert(
+      `Your admin code is ${event.adminCode}. Keep it somewhere safe to log in as admin later.`
+    );
+  }
+
+  return event;
+}
+
+function ensureCurrentUserId() {
+  if (!eventState) {
+    return "";
+  }
+
+  const key = userStorageKey(eventState.id);
+  const storedId = window.localStorage.getItem(key);
+  const existingParticipant = participants.find(
+    (participant) => participant.id === storedId
+  );
+
+  if (existingParticipant) {
+    return existingParticipant.id;
+  }
+
+  const name = promptForValue(
+    `Enter your name to join "${eventState.name ?? "Untitled event"}":`,
+    "Guest"
+  );
+
+  const participant = createParticipant(name);
+  participants.push(participant);
+  schedules.set(participant.id, new Set());
+  saveEventState();
+  window.localStorage.setItem(key, participant.id);
+  return participant.id;
+}
+
+function loadAdminSessionForCurrentUser() {
+  if (!eventState) {
+    return false;
+  }
+
+  const stored = window.localStorage.getItem(adminSessionKey(eventState.id));
+  return stored === CURRENT_USER_ID;
+}
+
+function refreshAdminState() {
+  isAdmin = CURRENT_USER_ID === ADMIN_ID && adminSessionActive;
+}
+
+function updateEventDetails() {
+  if (eventNameDisplay) {
+    eventNameDisplay.textContent = eventState?.name || "Untitled event";
+  }
+
+  if (currentUserDisplay) {
+    const participant = participants.find(
+      (item) => item.id === CURRENT_USER_ID
+    );
+    const baseName = participant ? participant.name : "";
+    const roleLabel =
+      CURRENT_USER_ID === ADMIN_ID
+        ? isAdmin
+          ? "Admin (unlocked)"
+          : "Admin (locked)"
+        : "Participant";
+    currentUserDisplay.textContent = baseName
+      ? `Signed in as ${baseName} · ${roleLabel}`
+      : roleLabel;
+  }
+
+  if (adminCodeNotice) {
+    if (isAdmin && eventState?.adminCode) {
+      adminCodeNotice.hidden = false;
+      adminCodeNotice.textContent = `Admin code: ${eventState.adminCode}`;
+    } else {
+      adminCodeNotice.hidden = true;
+      adminCodeNotice.textContent = "";
+    }
+  }
+}
+
+function updateAdminUi() {
+  if (!eventState) {
+    return;
+  }
+
+  if (adminStatusText) {
+    if (isAdmin) {
+      adminStatusText.textContent = "Admin tools unlocked.";
+    } else if (CURRENT_USER_ID === ADMIN_ID) {
+      adminStatusText.textContent = "Enter the admin code to unlock admin tools.";
+    } else {
+      adminStatusText.textContent = "Admin tools are reserved for the event creator.";
+    }
+  }
+
+  if (adminLoginForm) {
+    adminLoginForm.hidden = isAdmin || CURRENT_USER_ID !== ADMIN_ID;
+  }
+
+  if (adminLogoutButton) {
+    adminLogoutButton.hidden = !isAdmin;
+  }
+
+  if (adminLoginError) {
+    adminLoginError.hidden = true;
+    adminLoginError.textContent = "";
+  }
+
+  if (adminCodeInput) {
+    adminCodeInput.value = "";
+  }
+}
+
+function handleAdminLoginSubmit(event) {
+  event.preventDefault();
+
+  if (!eventState || CURRENT_USER_ID !== ADMIN_ID) {
+    return;
+  }
+
+  const code = adminCodeInput?.value?.trim();
+  if (!code) {
+    if (adminLoginError) {
+      adminLoginError.hidden = false;
+      adminLoginError.textContent = "Enter the admin code to continue.";
+    }
+    return;
+  }
+
+  if (code === eventState.adminCode) {
+    window.localStorage.setItem(adminSessionKey(eventState.id), CURRENT_USER_ID);
+    adminSessionActive = true;
+    refreshAdminState();
+    updateEventDetails();
+    updateAdminUi();
+    renderParticipantList();
+    updateDeleteButton();
+  } else if (adminLoginError) {
+    adminLoginError.hidden = false;
+    adminLoginError.textContent = "Incorrect admin code.";
+  }
+}
+
+function handleAdminLogout() {
+  if (!eventState) {
+    return;
+  }
+
+  window.localStorage.removeItem(adminSessionKey(eventState.id));
+  adminSessionActive = false;
+  refreshAdminState();
+  updateEventDetails();
+  updateAdminUi();
+  renderParticipantList();
+  updateDeleteButton();
+}
+
+function handleCreateEventClick() {
+  const proceed = window.confirm(
+    "Creating a new event will replace the current schedules stored on this device. Continue?"
+  );
+  if (!proceed) {
+    return;
+  }
+
+  clearEventSpecificState(eventState?.id);
+  promptCreateEvent();
+  updateEventDetails();
+  updateAdminUi();
+  renderParticipantList();
+  renderMyScheduleGrid();
+  renderCommonAvailabilityGrid();
+  updateDeleteButton();
+  setActiveTab("my-schedule");
 }
 
 function slotKey(dayIndex, hour) {
@@ -342,7 +627,7 @@ function toggleAvailability(slot) {
     schedule.add(slot);
   }
   schedules.set(CURRENT_USER_ID, schedule);
-  saveSchedules();
+  saveEventState();
   renderMyScheduleGrid();
   renderCommonAvailabilityGrid();
   renderParticipantList();
@@ -351,7 +636,7 @@ function toggleAvailability(slot) {
 
 function clearSchedule(participantId) {
   schedules.set(participantId, new Set());
-  saveSchedules();
+  saveEventState();
 }
 
 function handleTooltipEnter(event, cell) {
@@ -454,6 +739,36 @@ function createCell(classes, text = "") {
   return cell;
 }
 
+function initialiseApp() {
+  let event = loadExistingEvent();
+  let created = false;
+
+  if (!event) {
+    event = promptCreateEvent();
+    created = true;
+  } else {
+    applyEventState(event);
+  }
+
+  if (!created) {
+    CURRENT_USER_ID = ensureCurrentUserId();
+    viewedParticipantId = CURRENT_USER_ID;
+    adminSessionActive = loadAdminSessionForCurrentUser();
+    refreshAdminState();
+  }
+
+  if (!viewedParticipantId) {
+    viewedParticipantId = CURRENT_USER_ID;
+  }
+
+  updateEventDetails();
+  updateAdminUi();
+  renderParticipantList();
+  renderMyScheduleGrid();
+  renderCommonAvailabilityGrid();
+  updateDeleteButton();
+}
+
 function setActiveTab(targetId) {
   tabButtons.forEach((button) => {
     const isActive = button.dataset.tabTarget === targetId;
@@ -470,39 +785,43 @@ function setActiveTab(targetId) {
   }
 }
 
-tabsContainer.addEventListener("click", (event) => {
-  const button = event.target.closest(".tabs__button");
-  if (!button) {
-    return;
-  }
-  const targetId = button.dataset.tabTarget;
-  if (targetId) {
-    setActiveTab(targetId);
-  }
-});
+if (tabsContainer) {
+  tabsContainer.addEventListener("click", (event) => {
+    const button = event.target.closest(".tabs__button");
+    if (!button) {
+      return;
+    }
+    const targetId = button.dataset.tabTarget;
+    if (targetId) {
+      setActiveTab(targetId);
+    }
+  });
+}
 
-deleteScheduleButton.addEventListener("click", () => {
-  if (!isAdmin) {
-    return;
-  }
-  const participant = participants.find((item) => item.id === viewedParticipantId);
-  if (!participant) {
-    return;
-  }
-  const confirmationMessage =
-    viewedParticipantId === CURRENT_USER_ID
-      ? "Are you sure you want to clear your schedule?"
-      : `Delete ${participant.name}'s schedule?`;
-  const confirmed = window.confirm(confirmationMessage);
-  if (!confirmed) {
-    return;
-  }
-  clearSchedule(viewedParticipantId);
-  renderMyScheduleGrid();
-  renderCommonAvailabilityGrid();
-  renderParticipantList();
-  updateDeleteButton();
-});
+if (deleteScheduleButton) {
+  deleteScheduleButton.addEventListener("click", () => {
+    if (!isAdmin) {
+      return;
+    }
+    const participant = participants.find((item) => item.id === viewedParticipantId);
+    if (!participant) {
+      return;
+    }
+    const confirmationMessage =
+      viewedParticipantId === CURRENT_USER_ID
+        ? "Are you sure you want to clear your schedule?"
+        : `Delete ${participant.name}'s schedule?`;
+    const confirmed = window.confirm(confirmationMessage);
+    if (!confirmed) {
+      return;
+    }
+    clearSchedule(viewedParticipantId);
+    renderMyScheduleGrid();
+    renderCommonAvailabilityGrid();
+    renderParticipantList();
+    updateDeleteButton();
+  });
+}
 
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
@@ -510,8 +829,5 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-renderParticipantList();
-renderMyScheduleGrid();
-renderCommonAvailabilityGrid();
-updateDeleteButton();
+initialiseApp();
 

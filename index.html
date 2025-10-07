@@ -13,6 +13,37 @@
         <p class="app__tagline">
           Collaboratively capture weekly availability and discover times that work for everyone.
         </p>
+        <div class="event-controls" id="eventControls">
+          <div class="event-controls__primary">
+            <h2 class="event-controls__name" id="eventNameDisplay"></h2>
+            <p class="event-controls__info" id="currentUserDisplay"></p>
+            <p class="event-controls__code" id="adminCodeNotice" hidden></p>
+          </div>
+          <div class="event-controls__actions">
+            <button class="event-controls__button" id="createEventButton" type="button">
+              Create new event
+            </button>
+            <form class="admin-login" id="adminLoginForm">
+              <label class="admin-login__label" for="adminCodeInput">Admin code</label>
+              <div class="admin-login__controls">
+                <input
+                  class="admin-login__input"
+                  id="adminCodeInput"
+                  type="password"
+                  name="adminCode"
+                  autocomplete="one-time-code"
+                  aria-describedby="adminStatusText adminLoginError"
+                />
+                <button class="admin-login__submit" type="submit">Log in</button>
+              </div>
+              <p class="admin-login__error" id="adminLoginError" role="alert" hidden></p>
+            </form>
+            <p class="admin-login__status" id="adminStatusText"></p>
+            <button class="event-controls__button" id="adminLogoutButton" type="button" hidden>
+              Log out
+            </button>
+          </div>
+        </div>
       </header>
 
       <main class="app__body">
