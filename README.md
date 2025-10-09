@@ -5,7 +5,7 @@ A single-page prototype that demonstrates a collaborative weekly scheduling inte
 ## Features
 
 - **Event setup with admin codes** – Create a new event from the header, receive a unique admin login code, and use it to unlock admin-only tools later.
-- **Interactive weekly grid** – Click time slots to toggle availability for the current user, with days across the columns and a 24-hour timeline down the rows.
+- **Interactive weekly grid** – Click time slots to toggle availability for the current user.
 - **Participant management** – Logged-in admins can review other participants' schedules and clear them if necessary.
 - **Common availability view** – The common-times tab visualises overlap across all schedules and supports detailed hover tooltips.
 - **Persistent data** – Event details, participants, and schedules are saved to `localStorage`, so selections remain between visits on the same device.

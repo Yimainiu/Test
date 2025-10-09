@@ -415,7 +415,15 @@ function ensureSchedule(participantId) {
 }
 
 function formatHour(hour) {
-  return `${String(hour).padStart(2, "0")}:00`;
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const normalised = hour % 12 === 0 ? 12 : hour % 12;
+  return `${normalised} ${suffix}`;
+}
+
+function formatHourShort(hour) {
+  const suffix = hour >= 12 ? "p" : "a";
+  const normalised = hour % 12 === 0 ? 12 : hour % 12;
+  return `${normalised}${suffix}`;
 }
 
 function formatHourRange(hour) {
@@ -437,11 +445,11 @@ function renderMyScheduleGrid() {
   const fragment = document.createDocumentFragment();
   fragment.append(createHeaderRow());
 
-  HOURS.forEach((hour) => {
+  DAYS.forEach((day, dayIndex) => {
     const row = createRow();
-    row.append(createCell("grid__cell grid__cell--time", formatHour(hour)));
+    row.append(createCell("grid__cell grid__cell--day", day));
 
-    DAYS.forEach((day, dayIndex) => {
+    HOURS.forEach((hour) => {
       const key = slotKey(dayIndex, hour);
       const isAvailable = schedule.has(key);
       const cellClasses = ["grid__cell"];
@@ -501,11 +509,11 @@ function renderCommonAvailabilityGrid() {
 
   const totalParticipants = participants.length;
 
-  HOURS.forEach((hour) => {
+  DAYS.forEach((day, dayIndex) => {
     const row = createRow();
-    row.append(createCell("grid__cell grid__cell--time", formatHour(hour)));
+    row.append(createCell("grid__cell grid__cell--day", day));
 
-    DAYS.forEach((day, dayIndex) => {
+    HOURS.forEach((hour) => {
       const key = slotKey(dayIndex, hour);
       const availableParticipants = participants.filter((participant) => {
         const participantSchedule = ensureSchedule(participant.id);
@@ -710,9 +718,9 @@ function hideTooltip() {
 
 function createHeaderRow() {
   const row = createRow();
-  row.append(createCell("grid__cell grid__cell--header", "Time"));
-  DAYS.forEach((day) => {
-    row.append(createCell("grid__cell grid__cell--header", day));
+  row.append(createCell("grid__cell grid__cell--header"));
+  HOURS.forEach((hour) => {
+    row.append(createCell("grid__cell grid__cell--header", formatHourShort(hour)));
   });
   return row;
 }
