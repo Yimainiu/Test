@@ -415,15 +415,7 @@ function ensureSchedule(participantId) {
 }
 
 function formatHour(hour) {
-  const suffix = hour >= 12 ? "PM" : "AM";
-  const normalised = hour % 12 === 0 ? 12 : hour % 12;
-  return `${normalised} ${suffix}`;
-}
-
-function formatHourShort(hour) {
-  const suffix = hour >= 12 ? "p" : "a";
-  const normalised = hour % 12 === 0 ? 12 : hour % 12;
-  return `${normalised}${suffix}`;
+  return `${String(hour).padStart(2, "0")}:00`;
 }
 
 function formatHourRange(hour) {
@@ -445,11 +437,11 @@ function renderMyScheduleGrid() {
   const fragment = document.createDocumentFragment();
   fragment.append(createHeaderRow());
 
-  DAYS.forEach((day, dayIndex) => {
+  HOURS.forEach((hour) => {
     const row = createRow();
-    row.append(createCell("grid__cell grid__cell--day", day));
+    row.append(createCell("grid__cell grid__cell--time", formatHour(hour)));
 
-    HOURS.forEach((hour) => {
+    DAYS.forEach((day, dayIndex) => {
       const key = slotKey(dayIndex, hour);
       const isAvailable = schedule.has(key);
       const cellClasses = ["grid__cell"];
@@ -466,7 +458,10 @@ function renderMyScheduleGrid() {
       cell.dataset.dayIndex = String(dayIndex);
       cell.dataset.hour = String(hour);
       cell.dataset.slotKey = key;
-      cell.setAttribute("aria-label", `${day} ${formatHourRange(hour)} availability`);
+      cell.setAttribute(
+        "aria-label",
+        `${day} ${formatHourRange(hour)} availability`
+      );
       cell.setAttribute("role", "button");
       cell.setAttribute("aria-pressed", String(isAvailable));
       cell.tabIndex = editable ? 0 : -1;
@@ -509,19 +504,22 @@ function renderCommonAvailabilityGrid() {
 
   const totalParticipants = participants.length;
 
-  DAYS.forEach((day, dayIndex) => {
+  HOURS.forEach((hour) => {
     const row = createRow();
-    row.append(createCell("grid__cell grid__cell--day", day));
+    row.append(createCell("grid__cell grid__cell--time", formatHour(hour)));
 
-    HOURS.forEach((hour) => {
+    DAYS.forEach((day, dayIndex) => {
       const key = slotKey(dayIndex, hour);
       const availableParticipants = participants.filter((participant) => {
         const participantSchedule = ensureSchedule(participant.id);
         return participantSchedule.has(key);
       });
-      const availableNames = availableParticipants.map((participant) => participant.name);
+      const availableNames = availableParticipants.map(
+        (participant) => participant.name
+      );
       const availableCount = availableParticipants.length;
-      const everyoneAvailable = availableCount === totalParticipants && totalParticipants > 0;
+      const everyoneAvailable =
+        availableCount === totalParticipants && totalParticipants > 0;
       const hasAvailability = availableCount > 0;
 
       const cell = createCell("grid__cell");
@@ -544,9 +542,14 @@ function renderCommonAvailabilityGrid() {
       const description = hasAvailability
         ? `${availableCount} participant${availableCount === 1 ? "" : "s"} available (${availableNames.join(", ")})`
         : "No participants available";
-      cell.setAttribute("aria-label", `${day} ${formatHourRange(hour)} · ${description}`);
+      cell.setAttribute(
+        "aria-label",
+        `${day} ${formatHourRange(hour)} · ${description}`
+      );
 
-      cell.addEventListener("mouseenter", (event) => handleTooltipEnter(event, cell));
+      cell.addEventListener("mouseenter", (event) =>
+        handleTooltipEnter(event, cell)
+      );
       cell.addEventListener("mousemove", handleTooltipMove);
       cell.addEventListener("mouseleave", hideTooltip);
       cell.addEventListener("focus", () => handleTooltipFocus(cell));
@@ -719,8 +722,8 @@ function hideTooltip() {
 function createHeaderRow() {
   const row = createRow();
   row.append(createCell("grid__cell grid__cell--header"));
-  HOURS.forEach((hour) => {
-    row.append(createCell("grid__cell grid__cell--header", formatHourShort(hour)));
+  DAYS.forEach((day) => {
+    row.append(createCell("grid__cell grid__cell--header", day));
   });
   return row;
 }
