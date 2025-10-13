@@ -294,15 +294,18 @@ body::before {
 }
 
 .grid {
-  --grid-hour-width: 68px;
-  --grid-day-height: 48px;
-  grid-template-columns: 120px repeat(24, minmax(var(--grid-hour-width), 1fr));
-  grid-template-rows: 42px repeat(7, minmax(var(--grid-day-height), 1fr));
+  --grid-day-width: 120px;
+  --grid-time-width: 110px;
+  --grid-hour-height: 48px;
+  grid-template-columns: var(--grid-time-width)
+    repeat(7, minmax(var(--grid-day-width), 1fr));
+  grid-template-rows: 42px repeat(24, minmax(var(--grid-hour-height), 1fr));
 }
 
 .grid--compact {
-  --grid-hour-width: 52px;
-  --grid-day-height: 44px;
+  --grid-day-width: 96px;
+  --grid-time-width: 96px;
+  --grid-hour-height: 44px;
 }
 
 .grid--common {
@@ -331,7 +334,8 @@ body::before {
   backdrop-filter: blur(10px);
 }
 
-.grid__cell--day {
+.grid__cell--day,
+.grid__cell--time {
   justify-content: flex-start;
   padding-inline-start: 1rem;
   font-weight: 600;
@@ -550,7 +554,8 @@ body::before {
   }
 
   .grid {
-    --grid-hour-width: 48px;
+    --grid-day-width: 96px;
+    --grid-time-width: 96px;
   }
 
   .app__header {
@@ -583,7 +588,8 @@ body::before {
 
   .grid__row {
     display: grid;
-    grid-template-columns: 120px repeat(24, minmax(48px, 1fr));
+    grid-template-columns: var(--grid-time-width)
+      repeat(7, minmax(96px, 1fr));
   }
 
   .event-controls__primary {
