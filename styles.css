@@ -105,6 +105,57 @@ body::before {
   font-size: 0.95rem;
 }
 
+.event-controls__share {
+  margin: 0.6rem 0 0;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  align-items: center;
+}
+
+.event-controls__share-link {
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.event-controls__copy {
+  border: 0;
+  border-radius: 0.65rem;
+  padding: 0.35rem 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(56, 189, 248, 0.25);
+  color: white;
+  box-shadow: 0 10px 20px rgba(14, 165, 233, 0.3);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.event-controls__copy:hover,
+.event-controls__copy:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(14, 165, 233, 0.35);
+}
+
+.event-controls__copy:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: 2px;
+}
+
+.event-controls__copy:active {
+  transform: translateY(0);
+}
+
+.event-controls__copy-status {
+  flex-basis: 100%;
+  font-size: 0.85rem;
+  color: var(--color-accent);
+  min-height: 1em;
+}
+
 .event-controls__actions {
   display: flex;
   flex-direction: column;
@@ -294,15 +345,18 @@ body::before {
 }
 
 .grid {
-  --grid-hour-width: 68px;
-  --grid-day-height: 48px;
-  grid-template-columns: 120px repeat(24, minmax(var(--grid-hour-width), 1fr));
-  grid-template-rows: 42px repeat(7, minmax(var(--grid-day-height), 1fr));
+  --grid-day-width: 120px;
+  --grid-time-width: 110px;
+  --grid-hour-height: 48px;
+  grid-template-columns: var(--grid-time-width)
+    repeat(7, minmax(var(--grid-day-width), 1fr));
+  grid-template-rows: 42px repeat(24, minmax(var(--grid-hour-height), 1fr));
 }
 
 .grid--compact {
-  --grid-hour-width: 52px;
-  --grid-day-height: 44px;
+  --grid-day-width: 96px;
+  --grid-time-width: 96px;
+  --grid-hour-height: 44px;
 }
 
 .grid--common {
@@ -331,7 +385,8 @@ body::before {
   backdrop-filter: blur(10px);
 }
 
-.grid__cell--day {
+.grid__cell--day,
+.grid__cell--time {
   justify-content: flex-start;
   padding-inline-start: 1rem;
   font-weight: 600;
@@ -550,7 +605,8 @@ body::before {
   }
 
   .grid {
-    --grid-hour-width: 48px;
+    --grid-day-width: 96px;
+    --grid-time-width: 96px;
   }
 
   .app__header {
@@ -583,7 +639,8 @@ body::before {
 
   .grid__row {
     display: grid;
-    grid-template-columns: 120px repeat(24, minmax(48px, 1fr));
+    grid-template-columns: var(--grid-time-width)
+      repeat(7, minmax(96px, 1fr));
   }
 
   .event-controls__primary {

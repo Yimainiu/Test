@@ -15,6 +15,7 @@ const CURRENT_EVENT_KEY = `${STORAGE_NAMESPACE}:current-event-id`;
 const EVENT_KEY_PREFIX = `${STORAGE_NAMESPACE}:event:`;
 const USER_KEY_PREFIX = `${STORAGE_NAMESPACE}:user:`;
 const ADMIN_SESSION_PREFIX = `${STORAGE_NAMESPACE}:admin-session:`;
+const EVENT_ID_QUERY_PARAM = "event";
 
 let eventState = null;
 let schedules = new Map();
@@ -42,6 +43,12 @@ const adminCodeInput = document.getElementById("adminCodeInput");
 const adminStatusText = document.getElementById("adminStatusText");
 const adminLoginError = document.getElementById("adminLoginError");
 const adminLogoutButton = document.getElementById("adminLogoutButton");
+const eventShareNotice = document.getElementById("eventShareNotice");
+const eventShareLink = document.getElementById("eventShareLink");
+const copyShareLinkButton = document.getElementById("copyShareLinkButton");
+const copyShareLinkStatus = document.getElementById("copyShareLinkStatus");
+
+let shareCopyStatusTimeout = null;
 if (tooltip) {
   tooltip.dataset.visible = "false";
   tooltip.setAttribute("aria-hidden", "true");
@@ -59,6 +66,13 @@ if (adminLogoutButton) {
   adminLogoutButton.addEventListener("click", handleAdminLogout);
 }
 
+if (copyShareLinkButton) {
+  copyShareLinkButton.disabled = true;
+  copyShareLinkButton.addEventListener("click", () => {
+    handleCopyShareLink();
+  });
+}
+
 function eventStorageKey(eventId) {
   return `${EVENT_KEY_PREFIX}${eventId}`;
 }
@@ -69,6 +83,70 @@ function userStorageKey(eventId) {
 
 function adminSessionKey(eventId) {
   return `${ADMIN_SESSION_PREFIX}${eventId}`;
+}
+
+function getEventIdFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fromSearch = (params.get(EVENT_ID_QUERY_PARAM) ?? "").trim();
+    if (fromSearch) {
+      return fromSearch;
+    }
+
+    const hash = window.location.hash.replace(/^#/, "");
+    if (hash.startsWith(`${EVENT_ID_QUERY_PARAM}=`)) {
+      const value = hash.slice(EVENT_ID_QUERY_PARAM.length + 1).trim();
+      return value;
+    }
+  } catch (error) {
+    console.warn("Unable to read event id from URL", error);
+  }
+  return "";
+}
+
+function buildEventUrl(eventId) {
+  const url = new URL(window.location.href);
+  if (eventId) {
+    url.searchParams.set(EVENT_ID_QUERY_PARAM, eventId);
+  } else {
+    url.searchParams.delete(EVENT_ID_QUERY_PARAM);
+  }
+  url.hash = "";
+  return url.toString();
+}
+
+function updateUrlForEvent(eventId) {
+  if (!eventId) {
+    return;
+  }
+  const shareUrl = buildEventUrl(eventId);
+  if (shareUrl !== window.location.href) {
+    window.history.replaceState({}, document.title, shareUrl);
+  }
+}
+
+function getShareableEventUrl() {
+  return eventState?.id ? buildEventUrl(eventState.id) : "";
+}
+
+function updateCopyStatus(message) {
+  if (!copyShareLinkStatus) {
+    return;
+  }
+
+  copyShareLinkStatus.textContent = message ?? "";
+
+  if (shareCopyStatusTimeout) {
+    window.clearTimeout(shareCopyStatusTimeout);
+    shareCopyStatusTimeout = null;
+  }
+
+  if (message) {
+    shareCopyStatusTimeout = window.setTimeout(() => {
+      copyShareLinkStatus.textContent = "";
+      shareCopyStatusTimeout = null;
+    }, 4000);
+  }
 }
 
 function persistEvent(event) {
@@ -120,9 +198,9 @@ function saveEventState() {
   persistEvent(eventState);
 }
 
-function loadExistingEvent() {
+function loadExistingEvent(explicitEventId) {
   try {
-    const eventId = window.localStorage.getItem(CURRENT_EVENT_KEY);
+    const eventId = explicitEventId || window.localStorage.getItem(CURRENT_EVENT_KEY);
     if (!eventId) {
       return null;
     }
@@ -225,9 +303,12 @@ function promptCreateEvent() {
   window.localStorage.setItem(userStorageKey(event.id), CURRENT_USER_ID);
   window.localStorage.setItem(adminSessionKey(event.id), CURRENT_USER_ID);
 
+  updateUrlForEvent(event.id);
+  const shareUrl = buildEventUrl(event.id);
+
   if (typeof window.alert === "function") {
     window.alert(
-      `Your admin code is ${event.adminCode}. Keep it somewhere safe to log in as admin later.`
+      `Your admin code is ${event.adminCode}. Keep it somewhere safe to log in as admin later.\n\nShare this link with participants to give them access:\n${shareUrl}`
     );
   }
 
@@ -305,6 +386,8 @@ function updateEventDetails() {
       adminCodeNotice.textContent = "";
     }
   }
+
+  updateShareLink();
 }
 
 function updateAdminUi() {
@@ -337,6 +420,32 @@ function updateAdminUi() {
 
   if (adminCodeInput) {
     adminCodeInput.value = "";
+  }
+}
+
+function updateShareLink() {
+  if (!eventShareNotice || !eventShareLink) {
+    return;
+  }
+
+  const shareUrl = getShareableEventUrl();
+
+  if (shareUrl) {
+    eventShareNotice.hidden = false;
+    eventShareLink.href = shareUrl;
+    eventShareLink.textContent = shareUrl;
+    eventShareLink.setAttribute("aria-label", `Shareable event link: ${shareUrl}`);
+    if (copyShareLinkButton) {
+      copyShareLinkButton.disabled = false;
+    }
+  } else {
+    eventShareNotice.hidden = true;
+    eventShareLink.removeAttribute("href");
+    eventShareLink.textContent = "";
+    if (copyShareLinkButton) {
+      copyShareLinkButton.disabled = true;
+    }
+    updateCopyStatus("");
   }
 }
 
@@ -384,6 +493,32 @@ function handleAdminLogout() {
   updateDeleteButton();
 }
 
+async function handleCopyShareLink() {
+  const shareUrl = getShareableEventUrl();
+  if (!shareUrl) {
+    return;
+  }
+
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      updateCopyStatus("Link copied to clipboard.");
+      return;
+    } catch (error) {
+      console.warn("Unable to copy link using Clipboard API", error);
+    }
+  }
+
+  updateCopyStatus("Copy the link from the prompt window.");
+
+  if (typeof window.prompt === "function") {
+    window.prompt(
+      "Copy this event link and share it with your participants:",
+      shareUrl
+    );
+  }
+}
+
 function handleCreateEventClick() {
   const proceed = window.confirm(
     "Creating a new event will replace the current schedules stored on this device. Continue?"
@@ -415,15 +550,7 @@ function ensureSchedule(participantId) {
 }
 
 function formatHour(hour) {
-  const suffix = hour >= 12 ? "PM" : "AM";
-  const normalised = hour % 12 === 0 ? 12 : hour % 12;
-  return `${normalised} ${suffix}`;
-}
-
-function formatHourShort(hour) {
-  const suffix = hour >= 12 ? "p" : "a";
-  const normalised = hour % 12 === 0 ? 12 : hour % 12;
-  return `${normalised}${suffix}`;
+  return `${String(hour).padStart(2, "0")}:00`;
 }
 
 function formatHourRange(hour) {
@@ -445,11 +572,11 @@ function renderMyScheduleGrid() {
   const fragment = document.createDocumentFragment();
   fragment.append(createHeaderRow());
 
-  DAYS.forEach((day, dayIndex) => {
+  HOURS.forEach((hour) => {
     const row = createRow();
-    row.append(createCell("grid__cell grid__cell--day", day));
+    row.append(createCell("grid__cell grid__cell--time", formatHour(hour)));
 
-    HOURS.forEach((hour) => {
+    DAYS.forEach((day, dayIndex) => {
       const key = slotKey(dayIndex, hour);
       const isAvailable = schedule.has(key);
       const cellClasses = ["grid__cell"];
@@ -466,7 +593,10 @@ function renderMyScheduleGrid() {
       cell.dataset.dayIndex = String(dayIndex);
       cell.dataset.hour = String(hour);
       cell.dataset.slotKey = key;
-      cell.setAttribute("aria-label", `${day} ${formatHourRange(hour)} availability`);
+      cell.setAttribute(
+        "aria-label",
+        `${day} ${formatHourRange(hour)} availability`
+      );
       cell.setAttribute("role", "button");
       cell.setAttribute("aria-pressed", String(isAvailable));
       cell.tabIndex = editable ? 0 : -1;
@@ -509,19 +639,22 @@ function renderCommonAvailabilityGrid() {
 
   const totalParticipants = participants.length;
 
-  DAYS.forEach((day, dayIndex) => {
+  HOURS.forEach((hour) => {
     const row = createRow();
-    row.append(createCell("grid__cell grid__cell--day", day));
+    row.append(createCell("grid__cell grid__cell--time", formatHour(hour)));
 
-    HOURS.forEach((hour) => {
+    DAYS.forEach((day, dayIndex) => {
       const key = slotKey(dayIndex, hour);
       const availableParticipants = participants.filter((participant) => {
         const participantSchedule = ensureSchedule(participant.id);
         return participantSchedule.has(key);
       });
-      const availableNames = availableParticipants.map((participant) => participant.name);
+      const availableNames = availableParticipants.map(
+        (participant) => participant.name
+      );
       const availableCount = availableParticipants.length;
-      const everyoneAvailable = availableCount === totalParticipants && totalParticipants > 0;
+      const everyoneAvailable =
+        availableCount === totalParticipants && totalParticipants > 0;
       const hasAvailability = availableCount > 0;
 
       const cell = createCell("grid__cell");
@@ -544,9 +677,14 @@ function renderCommonAvailabilityGrid() {
       const description = hasAvailability
         ? `${availableCount} participant${availableCount === 1 ? "" : "s"} available (${availableNames.join(", ")})`
         : "No participants available";
-      cell.setAttribute("aria-label", `${day} ${formatHourRange(hour)} · ${description}`);
+      cell.setAttribute(
+        "aria-label",
+        `${day} ${formatHourRange(hour)} · ${description}`
+      );
 
-      cell.addEventListener("mouseenter", (event) => handleTooltipEnter(event, cell));
+      cell.addEventListener("mouseenter", (event) =>
+        handleTooltipEnter(event, cell)
+      );
       cell.addEventListener("mousemove", handleTooltipMove);
       cell.addEventListener("mouseleave", hideTooltip);
       cell.addEventListener("focus", () => handleTooltipFocus(cell));
@@ -719,8 +857,8 @@ function hideTooltip() {
 function createHeaderRow() {
   const row = createRow();
   row.append(createCell("grid__cell grid__cell--header"));
-  HOURS.forEach((hour) => {
-    row.append(createCell("grid__cell grid__cell--header", formatHourShort(hour)));
+  DAYS.forEach((day) => {
+    row.append(createCell("grid__cell grid__cell--header", day));
   });
   return row;
 }
@@ -740,14 +878,30 @@ function createCell(classes, text = "") {
 }
 
 function initialiseApp() {
-  let event = loadExistingEvent();
+  const requestedEventId = getEventIdFromUrl();
+  let requestedEventMissing = false;
+  let event = null;
   let created = false;
+
+  if (requestedEventId) {
+    event = loadExistingEvent(requestedEventId);
+    if (!event) {
+      requestedEventMissing = true;
+      console.warn(`No event found for id "${requestedEventId}" in local storage.`);
+    }
+  }
+
+  if (!event) {
+    event = loadExistingEvent();
+  }
 
   if (!event) {
     event = promptCreateEvent();
     created = true;
   } else {
     applyEventState(event);
+    window.localStorage.setItem(CURRENT_EVENT_KEY, event.id);
+    updateUrlForEvent(event.id);
   }
 
   if (!created) {
@@ -759,6 +913,12 @@ function initialiseApp() {
 
   if (!viewedParticipantId) {
     viewedParticipantId = CURRENT_USER_ID;
+  }
+
+  if (requestedEventMissing && typeof window.alert === "function") {
+    window.alert(
+      "The event link you opened is not available on this device. The most recent local event has been loaded instead."
+    );
   }
 
   updateEventDetails();
