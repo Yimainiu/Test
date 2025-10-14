@@ -105,6 +105,57 @@ body::before {
   font-size: 0.95rem;
 }
 
+.event-controls__share {
+  margin: 0.6rem 0 0;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  align-items: center;
+}
+
+.event-controls__share-link {
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.event-controls__copy {
+  border: 0;
+  border-radius: 0.65rem;
+  padding: 0.35rem 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(56, 189, 248, 0.25);
+  color: white;
+  box-shadow: 0 10px 20px rgba(14, 165, 233, 0.3);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.event-controls__copy:hover,
+.event-controls__copy:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(14, 165, 233, 0.35);
+}
+
+.event-controls__copy:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: 2px;
+}
+
+.event-controls__copy:active {
+  transform: translateY(0);
+}
+
+.event-controls__copy-status {
+  flex-basis: 100%;
+  font-size: 0.85rem;
+  color: var(--color-accent);
+  min-height: 1em;
+}
+
 .event-controls__actions {
   display: flex;
   flex-direction: column;
