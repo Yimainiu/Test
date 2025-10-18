@@ -18,7 +18,6 @@ const ADMIN_SESSION_PREFIX = `${STORAGE_NAMESPACE}:admin-session:`;
 const GUEST_SESSION_PREFIX = `${STORAGE_NAMESPACE}:guest-session:`;
 const EVENT_ID_QUERY_PARAM = "event";
 const GUEST_QUERY_PARAM = "guest";
-const EVENT_ID_QUERY_PARAM = "event";
 
 let eventState = null;
 let schedules = new Map();
@@ -136,7 +135,6 @@ function shouldForceGuestSession() {
 }
 
 function buildEventUrl(eventId, { guest = false } = {}) {
-function buildEventUrl(eventId) {
   const url = new URL(window.location.href);
   if (eventId) {
     url.searchParams.set(EVENT_ID_QUERY_PARAM, eventId);
@@ -157,11 +155,6 @@ function updateUrlForEvent(eventId, { guest = false } = {}) {
     return;
   }
   const shareUrl = buildEventUrl(eventId, { guest });
-function updateUrlForEvent(eventId) {
-  if (!eventId) {
-    return;
-  }
-  const shareUrl = buildEventUrl(eventId);
   if (shareUrl !== window.location.href) {
     window.history.replaceState({}, document.title, shareUrl);
   }
@@ -169,7 +162,6 @@ function updateUrlForEvent(eventId) {
 
 function getShareableEventUrl() {
   return eventState?.id ? buildEventUrl(eventState.id, { guest: true }) : "";
-  return eventState?.id ? buildEventUrl(eventState.id) : "";
 }
 
 function updateCopyStatus(message) {
@@ -349,7 +341,6 @@ function promptCreateEvent() {
 
   updateUrlForEvent(event.id);
   const shareUrl = buildEventUrl(event.id, { guest: true });
-  const shareUrl = buildEventUrl(event.id);
 
   if (typeof window.alert === "function") {
     window.alert(
@@ -973,7 +964,6 @@ function initialiseApp() {
     applyEventState(event);
     window.localStorage.setItem(CURRENT_EVENT_KEY, event.id);
     updateUrlForEvent(event.id, { guest: forceGuestSession });
-    updateUrlForEvent(event.id);
   }
 
   if (!created) {
