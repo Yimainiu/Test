@@ -15,6 +15,9 @@ const CURRENT_EVENT_KEY = `${STORAGE_NAMESPACE}:current-event-id`;
 const EVENT_KEY_PREFIX = `${STORAGE_NAMESPACE}:event:`;
 const USER_KEY_PREFIX = `${STORAGE_NAMESPACE}:user:`;
 const ADMIN_SESSION_PREFIX = `${STORAGE_NAMESPACE}:admin-session:`;
+const GUEST_SESSION_PREFIX = `${STORAGE_NAMESPACE}:guest-session:`;
+const EVENT_ID_QUERY_PARAM = "event";
+const GUEST_QUERY_PARAM = "guest";
 const EVENT_ID_QUERY_PARAM = "event";
 
 let eventState = null;
@@ -85,6 +88,10 @@ function adminSessionKey(eventId) {
   return `${ADMIN_SESSION_PREFIX}${eventId}`;
 }
 
+function guestSessionKey(eventId) {
+  return `${GUEST_SESSION_PREFIX}${eventId}`;
+}
+
 function getEventIdFromUrl() {
   try {
     const params = new URLSearchParams(window.location.search);
@@ -104,6 +111,31 @@ function getEventIdFromUrl() {
   return "";
 }
 
+function shouldForceGuestSession() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has(GUEST_QUERY_PARAM)) {
+      return false;
+    }
+    const value = params.get(GUEST_QUERY_PARAM);
+    if (value === null) {
+      return true;
+    }
+    const normalised = value.trim().toLowerCase();
+    return (
+      normalised === "" ||
+      normalised === "1" ||
+      normalised === "true" ||
+      normalised === "yes" ||
+      normalised === "guest"
+    );
+  } catch (error) {
+    console.warn("Unable to parse guest mode flag from URL", error);
+    return false;
+  }
+}
+
+function buildEventUrl(eventId, { guest = false } = {}) {
 function buildEventUrl(eventId) {
   const url = new URL(window.location.href);
   if (eventId) {
@@ -111,10 +143,20 @@ function buildEventUrl(eventId) {
   } else {
     url.searchParams.delete(EVENT_ID_QUERY_PARAM);
   }
+  if (guest) {
+    url.searchParams.set(GUEST_QUERY_PARAM, "1");
+  } else {
+    url.searchParams.delete(GUEST_QUERY_PARAM);
+  }
   url.hash = "";
   return url.toString();
 }
 
+function updateUrlForEvent(eventId, { guest = false } = {}) {
+  if (!eventId) {
+    return;
+  }
+  const shareUrl = buildEventUrl(eventId, { guest });
 function updateUrlForEvent(eventId) {
   if (!eventId) {
     return;
@@ -126,6 +168,7 @@ function updateUrlForEvent(eventId) {
 }
 
 function getShareableEventUrl() {
+  return eventState?.id ? buildEventUrl(eventState.id, { guest: true }) : "";
   return eventState?.id ? buildEventUrl(eventState.id) : "";
 }
 
@@ -281,6 +324,7 @@ function clearEventSpecificState(eventId) {
   }
   window.localStorage.removeItem(userStorageKey(eventId));
   window.localStorage.removeItem(adminSessionKey(eventId));
+  window.sessionStorage.removeItem(guestSessionKey(eventId));
 }
 
 function promptCreateEvent() {
@@ -304,6 +348,7 @@ function promptCreateEvent() {
   window.localStorage.setItem(adminSessionKey(event.id), CURRENT_USER_ID);
 
   updateUrlForEvent(event.id);
+  const shareUrl = buildEventUrl(event.id, { guest: true });
   const shareUrl = buildEventUrl(event.id);
 
   if (typeof window.alert === "function") {
@@ -315,19 +360,34 @@ function promptCreateEvent() {
   return event;
 }
 
-function ensureCurrentUserId() {
+function ensureCurrentUserId({ forceGuestSession = false } = {}) {
   if (!eventState) {
     return "";
   }
 
   const key = userStorageKey(eventState.id);
   const storedId = window.localStorage.getItem(key);
+  const storedMatchesAdmin = storedId === ADMIN_ID && !!storedId;
   const existingParticipant = participants.find(
     (participant) => participant.id === storedId
   );
 
-  if (existingParticipant) {
+  if (existingParticipant && (!forceGuestSession || !storedMatchesAdmin)) {
     return existingParticipant.id;
+  }
+
+  if (forceGuestSession) {
+    const sessionId = window.sessionStorage.getItem(
+      guestSessionKey(eventState.id)
+    );
+    if (sessionId) {
+      const sessionParticipant = participants.find(
+        (participant) => participant.id === sessionId
+      );
+      if (sessionParticipant) {
+        return sessionParticipant.id;
+      }
+    }
   }
 
   const name = promptForValue(
@@ -339,7 +399,17 @@ function ensureCurrentUserId() {
   participants.push(participant);
   schedules.set(participant.id, new Set());
   saveEventState();
-  window.localStorage.setItem(key, participant.id);
+
+  const shouldPersistToLocalStorage =
+    !forceGuestSession || !storedMatchesAdmin;
+  if (shouldPersistToLocalStorage) {
+    window.localStorage.setItem(key, participant.id);
+  }
+
+  if (forceGuestSession) {
+    window.sessionStorage.setItem(guestSessionKey(eventState.id), participant.id);
+  }
+
   return participant.id;
 }
 
@@ -879,6 +949,7 @@ function createCell(classes, text = "") {
 
 function initialiseApp() {
   const requestedEventId = getEventIdFromUrl();
+  const forceGuestSession = shouldForceGuestSession();
   let requestedEventMissing = false;
   let event = null;
   let created = false;
@@ -901,13 +972,16 @@ function initialiseApp() {
   } else {
     applyEventState(event);
     window.localStorage.setItem(CURRENT_EVENT_KEY, event.id);
+    updateUrlForEvent(event.id, { guest: forceGuestSession });
     updateUrlForEvent(event.id);
   }
 
   if (!created) {
-    CURRENT_USER_ID = ensureCurrentUserId();
+    CURRENT_USER_ID = ensureCurrentUserId({ forceGuestSession });
     viewedParticipantId = CURRENT_USER_ID;
-    adminSessionActive = loadAdminSessionForCurrentUser();
+    adminSessionActive = forceGuestSession
+      ? false
+      : loadAdminSessionForCurrentUser();
     refreshAdminState();
   }
 
