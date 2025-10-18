@@ -18,6 +18,25 @@
             <h2 class="event-controls__name" id="eventNameDisplay"></h2>
             <p class="event-controls__info" id="currentUserDisplay"></p>
             <p class="event-controls__code" id="adminCodeNotice" hidden></p>
+            <p class="event-controls__share" id="eventShareNotice" hidden>
+              Shareable link:
+              <a
+                id="eventShareLink"
+                class="event-controls__share-link"
+                href="#"
+                target="_blank"
+                rel="noopener"
+              ></a>
+              <button class="event-controls__copy" id="copyShareLinkButton" type="button">
+                Copy
+              </button>
+              <span
+                class="event-controls__copy-status"
+                id="copyShareLinkStatus"
+                role="status"
+                aria-live="polite"
+              ></span>
+            </p>
           </div>
           <div class="event-controls__actions">
             <button class="event-controls__button" id="createEventButton" type="button">
