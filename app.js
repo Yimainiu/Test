@@ -456,6 +456,12 @@ function updateAdminUi() {
     return;
   }
 
+  if (createEventButton) {
+    const canCreateEvent = isAdmin;
+    createEventButton.hidden = !canCreateEvent;
+    createEventButton.disabled = !canCreateEvent;
+  }
+
   if (adminStatusText) {
     if (isAdmin) {
       adminStatusText.textContent = "Admin tools unlocked.";
@@ -581,6 +587,10 @@ async function handleCopyShareLink() {
 }
 
 function handleCreateEventClick() {
+  if (!isAdmin) {
+    return;
+  }
+
   const proceed = window.confirm(
     "Creating a new event will replace the current schedules stored on this device. Continue?"
   );
