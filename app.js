@@ -1,3 +1,5 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+
 const DAYS = [
   "Monday",
   "Tuesday",
@@ -18,6 +20,88 @@ const ADMIN_SESSION_PREFIX = `${STORAGE_NAMESPACE}:admin-session:`;
 const GUEST_SESSION_PREFIX = `${STORAGE_NAMESPACE}:guest-session:`;
 const EVENT_ID_QUERY_PARAM = "event";
 const GUEST_QUERY_PARAM = "guest";
+const SUPABASE_EVENTS_TABLE = "events";
+
+function readSupabaseCredential(kind) {
+  const mapping = {
+    url: {
+      global: "__SUPABASE_URL__",
+      meta: "supabase-url",
+    },
+    anonKey: {
+      global: "__SUPABASE_ANON_KEY__",
+      meta: "supabase-anon-key",
+    },
+  };
+
+  const reference = mapping[kind];
+  if (!reference) {
+    return "";
+  }
+
+  const globalValue =
+    typeof window !== "undefined" ? window[reference.global] : undefined;
+  if (typeof globalValue === "string" && globalValue.trim()) {
+    return globalValue.trim();
+  }
+
+  const meta = document.querySelector(`meta[name="${reference.meta}"]`);
+  if (meta && typeof meta.content === "string" && meta.content.trim()) {
+    return meta.content.trim();
+  }
+
+  return "";
+}
+
+function isSupabasePlaceholder(value) {
+  if (!value) {
+    return true;
+  }
+
+  const normalised = value.trim().toLowerCase();
+  return (
+    normalised === "your_supabase_url" ||
+    normalised === "your_supabase_anon_key" ||
+    normalised.includes("your-project.supabase.co") ||
+    normalised.includes("your_supabase") ||
+    normalised === "public-anon-key" ||
+    normalised === "anon-key"
+  );
+}
+
+function initialiseSupabaseClient() {
+  const url = readSupabaseCredential("url");
+  const anonKey = readSupabaseCredential("anonKey");
+
+  const isConfigured =
+    !!url &&
+    !!anonKey &&
+    !isSupabasePlaceholder(url) &&
+    !isSupabasePlaceholder(anonKey);
+
+  if (!isConfigured) {
+    return { client: null, isConfigured: false };
+  }
+
+  try {
+    const client = createClient(url, anonKey, {
+      auth: { persistSession: false },
+    });
+    return { client, isConfigured: true };
+  } catch (error) {
+    console.error("Failed to initialise Supabase client", error);
+    return { client: null, isConfigured: false };
+  }
+}
+
+const { client: supabaseClient, isConfigured: isSupabaseConfigured } =
+  initialiseSupabaseClient();
+
+if (!isSupabaseConfigured) {
+  console.info(
+    "Supabase credentials are not configured. Data will be stored locally only."
+  );
+}
 
 let eventState = null;
 let schedules = new Map();
@@ -184,8 +268,88 @@ function updateCopyStatus(message) {
   }
 }
 
-function persistEvent(event) {
-  window.localStorage.setItem(eventStorageKey(event.id), JSON.stringify(event));
+function persistEventToLocalCache(event) {
+  try {
+    window.localStorage.setItem(
+      eventStorageKey(event.id),
+      JSON.stringify(event)
+    );
+  } catch (error) {
+    console.error("Unable to persist event to local storage", error);
+  }
+}
+
+async function persistEventToSupabase(event) {
+  if (!isSupabaseConfigured || !supabaseClient) {
+    return;
+  }
+
+  const { error } = await supabaseClient
+    .from(SUPABASE_EVENTS_TABLE)
+    .upsert({ id: event.id, data: event });
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function persistEvent(event) {
+  persistEventToLocalCache(event);
+  try {
+    await persistEventToSupabase(event);
+  } catch (error) {
+    console.error("Unable to persist event to Supabase", error);
+    throw error;
+  }
+}
+
+function normaliseEventData(rawEvent, fallbackId) {
+  const source =
+    rawEvent && typeof rawEvent === "object" ? rawEvent : Object.create(null);
+  const event = { ...source };
+  if (fallbackId) {
+    event.id = fallbackId;
+  }
+
+  if (!event.id && typeof source.id === "string") {
+    event.id = source.id;
+  }
+
+  if (!event.id) {
+    return null;
+  }
+
+  if (!Array.isArray(event.participants)) {
+    event.participants = [];
+  }
+
+  if (typeof event.schedules !== "object" || event.schedules === null) {
+    event.schedules = {};
+  }
+
+  return event;
+}
+
+async function fetchEventFromSupabase(eventId) {
+  if (!isSupabaseConfigured || !supabaseClient) {
+    return null;
+  }
+
+  const { data, error } = await supabaseClient
+    .from(SUPABASE_EVENTS_TABLE)
+    .select("id, data")
+    .eq("id", eventId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return normaliseEventData(data.data ?? {}, data.id);
 }
 
 function applyEventState(event) {
@@ -230,34 +394,45 @@ function saveEventState() {
   eventState.schedules = serialisedSchedules;
   eventState.participants = participants;
 
-  persistEvent(eventState);
+  persistEventToLocalCache(eventState);
+
+  persistEventToSupabase(eventState).catch((error) => {
+    console.error("Unable to sync event to Supabase", error);
+  });
 }
 
-function loadExistingEvent(explicitEventId) {
+function loadEventFromLocalCache(eventId) {
   try {
-    const eventId = explicitEventId || window.localStorage.getItem(CURRENT_EVENT_KEY);
-    if (!eventId) {
-      return null;
-    }
-
     const raw = window.localStorage.getItem(eventStorageKey(eventId));
     if (!raw) {
       return null;
     }
 
     const parsed = JSON.parse(raw);
-    parsed.id = eventId;
-    if (!Array.isArray(parsed.participants)) {
-      parsed.participants = [];
-    }
-    if (typeof parsed.schedules !== "object" || parsed.schedules === null) {
-      parsed.schedules = {};
-    }
-    return parsed;
+    return normaliseEventData(parsed, eventId);
   } catch (error) {
-    console.warn("Unable to load event state", error);
+    console.warn("Unable to load event state from local cache", error);
     return null;
   }
+}
+
+async function loadExistingEvent(explicitEventId) {
+  const eventId = explicitEventId || window.localStorage.getItem(CURRENT_EVENT_KEY);
+  if (!eventId) {
+    return null;
+  }
+
+  try {
+    const remoteEvent = await fetchEventFromSupabase(eventId);
+    if (remoteEvent) {
+      persistEventToLocalCache(remoteEvent);
+      return remoteEvent;
+    }
+  } catch (error) {
+    console.error("Unable to load event from Supabase", error);
+  }
+
+  return loadEventFromLocalCache(eventId);
 }
 
 function promptForValue(message, fallback) {
@@ -319,7 +494,7 @@ function clearEventSpecificState(eventId) {
   window.sessionStorage.removeItem(guestSessionKey(eventId));
 }
 
-function promptCreateEvent() {
+async function promptCreateEvent() {
   const eventName = promptForValue("Name your event:", "Team availability");
   const adminName = promptForValue(
     "Enter your name (you will be the admin):",
@@ -327,8 +502,6 @@ function promptCreateEvent() {
   );
 
   const event = createEventData({ eventName, adminName });
-  persistEvent(event);
-  window.localStorage.setItem(CURRENT_EVENT_KEY, event.id);
   applyEventState(event);
 
   CURRENT_USER_ID = event.adminParticipantId;
@@ -336,15 +509,25 @@ function promptCreateEvent() {
   adminSessionActive = true;
   refreshAdminState();
 
+  window.localStorage.setItem(CURRENT_EVENT_KEY, event.id);
   window.localStorage.setItem(userStorageKey(event.id), CURRENT_USER_ID);
   window.localStorage.setItem(adminSessionKey(event.id), CURRENT_USER_ID);
 
   updateUrlForEvent(event.id);
   const shareUrl = buildEventUrl(event.id, { guest: true });
 
+  try {
+    await persistEvent(event);
+  } catch (error) {
+    console.warn("Event saved locally but Supabase sync failed", error);
+  }
+
   if (typeof window.alert === "function") {
+    const shareInstructions = isSupabaseConfigured
+      ? `Share this link with participants to give them access:\n${shareUrl}`
+      : "Supabase is not configured, so this event is only stored on this device. Configure Supabase to share it with others.";
     window.alert(
-      `Your admin code is ${event.adminCode}. Keep it somewhere safe to log in as admin later.\n\nShare this link with participants to give them access:\n${shareUrl}`
+      `Your admin code is ${event.adminCode}. Keep it somewhere safe to log in as admin later.\n\n${shareInstructions}`
     );
   }
 
@@ -586,7 +769,7 @@ async function handleCopyShareLink() {
   }
 }
 
-function handleCreateEventClick() {
+async function handleCreateEventClick() {
   if (!isAdmin) {
     return;
   }
@@ -599,7 +782,7 @@ function handleCreateEventClick() {
   }
 
   clearEventSpecificState(eventState?.id);
-  promptCreateEvent();
+  await promptCreateEvent();
   updateEventDetails();
   updateAdminUi();
   renderParticipantList();
@@ -948,7 +1131,7 @@ function createCell(classes, text = "") {
   return cell;
 }
 
-function initialiseApp() {
+async function initialiseApp() {
   const requestedEventId = getEventIdFromUrl();
   const forceGuestSession = shouldForceGuestSession();
   let requestedEventMissing = false;
@@ -956,19 +1139,21 @@ function initialiseApp() {
   let created = false;
 
   if (requestedEventId) {
-    event = loadExistingEvent(requestedEventId);
+    event = await loadExistingEvent(requestedEventId);
     if (!event) {
       requestedEventMissing = true;
-      console.warn(`No event found for id "${requestedEventId}" in local storage.`);
+      console.warn(
+        `No event found for id "${requestedEventId}" in Supabase or local cache.`
+      );
     }
   }
 
   if (!event) {
-    event = loadExistingEvent();
+    event = await loadExistingEvent();
   }
 
   if (!event) {
-    event = promptCreateEvent();
+    event = await promptCreateEvent();
     created = true;
   } else {
     applyEventState(event);
@@ -991,7 +1176,7 @@ function initialiseApp() {
 
   if (requestedEventMissing && typeof window.alert === "function") {
     window.alert(
-      "The event link you opened is not available on this device. The most recent local event has been loaded instead."
+      "The event link you opened is not available from Supabase or this device. The most recent local event has been loaded instead."
     );
   }
 
@@ -1063,5 +1248,12 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-initialiseApp();
+initialiseApp().catch((error) => {
+  console.error("Failed to initialise the app", error);
+  if (typeof window.alert === "function") {
+    window.alert(
+      "Something went wrong while loading the app. Check the console for details."
+    );
+  }
+});
 
